@@ -51,6 +51,7 @@ def _impl_greeks_from(
     Nd2 = _gaussian.cdf(d2)
     Nmd1 = _gaussian.cdf(-d1)
     Nmd2 = _gaussian.cdf(-d2)
+    phimd1 = _gaussian.pdf(-d1)
     
     call_price = fwd * Nd1 - discount_factor * strike * Nd2
     put_price = -fwd * Nmd1 + discount_factor * strike * Nmd2
@@ -58,11 +59,13 @@ def _impl_greeks_from(
     call_delta = yield_factor * Nd1
     put_delta = -yield_factor * Nmd1
     
-    # Note: this calculation is not accuruate for extreme parameter values
-    # May need to separately compute call and put versions?
-    theta = ((-fwd*sigma*phid1) / (2*sqrt_tau) 
+
+    call_theta = ((-fwd*sigma*phid1) / (2*sqrt_tau) 
              - int_rate * strike *discount_factor * Nd2
              + div_yld*fwd*Nd1)
+    put_theta = ((-fwd*sigma*phimd1) / (2*sqrt_tau) 
+             + int_rate * strike *discount_factor * Nmd2
+             - div_yld*fwd*Nmd1)
     gamma = (yield_factor * phid1) / (spot * sigma * sqrt_tau)
     speed = -(gamma / spot) * (1. + d1 / (sigma * sqrt_tau))
     vega = fwd * sqrt_tau * phid1
@@ -72,28 +75,19 @@ def _impl_greeks_from(
     
     return (call_price, put_price,
             call_delta, put_delta,
+            call_theta, put_theta,
             gamma, speed,
             vega, vanna, vomma, ultima)
 
 
-def greeks_from(requests, 
-                underlying, 
+def greeks_from(spot, 
                 strike, 
-                horizon, 
-                volatility, 
+                tau, 
+                sigma, 
+                is_call=None,
                 int_rate=None, 
                 div_yld=None):
-    '''Compute requested prices and greeks
-    
-    Arguments can be scalars, numpy arrays or pandas Series
-    '''
-    if requests is None:
-        requests = _STANDARD_REQUESTS
-    elif isinstance(requests, str) and requests.lower() == 'all':
-        requests = _SUPPORTED_REQUESTS
-    else:
-        requests = set(requests)
-        assert requests.issubset(_SUPPORTED_REQUESTS)
+    '''Computes prices and greeks for European options in the Black Scholes model'''
 
     if int_rate is None:
         int_rate = 0.
@@ -102,20 +96,27 @@ def greeks_from(requests,
 
     (call_price, put_price,
      call_delta, put_delta,
+     call_theta, put_theta,
      gamma, speed,
-     vega, vanna, vomma, ultima) = _impl_greeks_from(spot=underlying, 
+     vega, vanna, vomma, ultima) = _impl_greeks_from(spot=spot, 
                                                      strike=strike,
-                                                     tau=horizon,
-                                                     sigma=volatility,
+                                                     tau=tau,
+                                                     sigma=sigma,
                                                      int_rate=int_rate,
                                                      div_yld=div_yld)
     
-    raw_result = dict(call_price=call_price, put_price=put_price, 
+    result = dict(    call_price=call_price, put_price=put_price, 
                       call_delta=call_delta, put_delta=put_delta,
+                      call_theta=call_theta, put_theta=put_theta,
                       gamma=gamma, speed=speed,
                       vega=vega, vanna=vanna, vomma=vomma, ultima=ultima,
-    )
+        )
 
-    result = {k:raw_result[k] for k in requests}
+    if is_call is not None:
+
+        result['price'] = is_call * call_price + (1-is_call)*put_price
+        result['delta'] = is_call * call_delta + (1-is_call)*put_delta
+        result['theta'] = is_call * call_theta + (1-is_call)*put_theta
+
 
     return result
