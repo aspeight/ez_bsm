@@ -192,12 +192,15 @@ class SingleExpirationChain:
         self.tau = self.dte / _DAYS_PER_YEAR
 
         assert (mark is not None or ((bid is not None) and (ask is not None)))
-        self.frame['mark'] = np.asarray(mark) if mark is not None else 0.5*(bid+ask)
-        self.frame['bid'] = np.asarray(bid) if bid is not None else mark
-        self.frame['ask'] = np.asarray(ask) if ask is not None else mark
-
-        self.frame['Type'] = 'P'
-        self.frame.loc[self.frame.is_call,'Type'] = 'C'
+        if mark is None:
+            self.frame['bid'] = np.asarray(bid) 
+            self.frame['ask'] = np.asarray(ask) 
+            self.frame['mark'] = 0.5*(self.frame.bid + self.frame.ask)
+        else:
+            self.frame['mark'] = np.asarray(mark)
+        
+        self.frame['type'] = 'P'
+        self.frame.loc[self.frame.is_call,'type'] = 'C'
 
         # these are expensive, so don't compute them unless they are needed
         self._discount_factor = None
@@ -211,6 +214,18 @@ class SingleExpirationChain:
     def compute_all(self):
         # this should cause everything else to be computed, so fast access through private members is ok
         _ = self.greeks
+
+    def as_dataframe(self):
+        df = self.greeks.copy()
+        df['is_am'] = self.is_am
+        df['dte'] = self.dte
+        df['tau'] = self.tau
+        df['expiration'] = self.expiration
+        df['close_date'] = self.close_date
+        df['discount_factor'] = self.discount_factor
+        df['int_rate'] = self.int_rate
+        df['implied_forward'] = self.implied_forward
+        return df
 
     @property
     def discount_factor(self):
